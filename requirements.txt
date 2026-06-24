@@ -32,6 +32,7 @@ anthropic==0.39.0
 
 # --- Config ---
 python-dotenv==1.0.1
+pycountry==24.6.1  # country dimension seed (ISO3 + UN M49 codes)
 
 # --- Testing ---
 pytest==8.3.4

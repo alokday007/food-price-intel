@@ -40,6 +40,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Project apps (live under the apps/ package — see each AppConfig.name).
+    "apps.catalog",
+    "apps.prices",
 ]
 
 MIDDLEWARE = [
