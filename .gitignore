@@ -22,3 +22,6 @@ staticfiles/
 .DS_Store
 .idea/
 .vscode/
+
+# Raw input data (downloaded, not source)
+data/raw/
