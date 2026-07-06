@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     # Project apps (live under the apps/ package — see each AppConfig.name).
     "apps.catalog",
     "apps.prices",
+    "apps.forecasting",
 ]
 
 MIDDLEWARE = [
