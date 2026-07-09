@@ -32,6 +32,7 @@ from apps.forecasting.baseline import (
     seasonal_naive_predict,
     walk_forward,
 )
+from apps.forecasting.sarima import SarimaForecaster
 
 HORIZONS = (1, 3)
 INITIAL_TRAIN_END = pd.Timestamp("2015-12-01")
@@ -88,3 +89,35 @@ def test_planted_leak_is_caught():
     assert not prediction_is_leak_free(values, leaky_peek_ahead, cutoff_idx=100, h=1), (
         "leakage probe failed to catch a forecaster that reads the target month"
     )
+
+
+# --- SARIMA (Phase 4) -------------------------------------------------------
+# SARIMA is the first model that *fits* per fold, so leakage-freedom is no longer
+# obvious by inspection: it depends on the forecaster training on the pre-cutoff
+# slice only. We fit a real SARIMAX here (short series + a few cutoffs to stay
+# fast) and require the same probe to pass: corrupting the post-cutoff future must
+# not move a prediction, i.e. the fit never touched it.
+
+
+def _short_series(n_months: int = 84) -> pd.Series:
+    """Shorter series so per-fold SARIMAX fits keep the test fast (starts 2010-01)."""
+    idx = pd.date_range("2010-01-01", periods=n_months, freq="MS")
+    t = np.arange(n_months)
+    rng = np.random.default_rng(7)
+    values = 100 + 0.15 * t + 6 * np.sin(2 * np.pi * t / 12) + rng.normal(0, 1.0, n_months)
+    return pd.Series(values, index=idx, name="OVERALL")
+
+
+@pytest.mark.parametrize("h", [1, 3])
+def test_no_leakage_sarima(h):
+    """Re-fit SARIMA must not let post-cutoff data influence a fold's forecast."""
+    series = _short_series()
+    values = series.to_numpy(dtype=float)
+    forecaster = SarimaForecaster(max_horizon=3)
+
+    # A handful of cutoffs deep enough to have a full seasonal history to fit on.
+    for cutoff_idx in (60, 66, 72):
+        assert prediction_is_leak_free(values, forecaster, cutoff_idx, h), (
+            f"LEAK: SARIMA forecast at cutoff_idx={cutoff_idx} h={h} changed when "
+            f"post-cutoff data was mutated — the fit peeked at the future"
+        )

@@ -18,6 +18,11 @@ requests==2.32.3
 openpyxl==3.1.5
 
 # --- ML ---
+# scipy is pinned explicitly: statsmodels 0.14.4's SARIMAX fitter calls
+# scipy.optimize.fmin_l_bfgs_b(disp=...), and scipy >=1.15 removed that kwarg
+# (TypeError at fit time). Unpinned, pip resolves scipy to 1.18 and SARIMA breaks;
+# 1.14.1 is the last line compatible with statsmodels 0.14.4.
+scipy==1.14.1
 statsmodels==0.14.4
 lightgbm==4.5.0
 scikit-learn==1.5.2
