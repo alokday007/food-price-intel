@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FFPI — Observed &amp; SARIMA Forecast</title>
+  <!-- Plotly from CDN: no build step, no bundled asset. -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; }
+    p.caption { color: #555; margin-top: 0; font-size: 0.9rem; }
+    #chart { width: 100%; height: 560px; }
+    #error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>FAO Food Price Index — OVERALL</h1>
+  <p class="caption">
+    Observed history (FAO) flowing into a 1–3 month SARIMA forecast.
+    Index base period 2014–2016 = 100.
+  </p>
+  <div id="chart"></div>
+  <p id="error"></p>
+
+  <script>
+    async function draw() {
+      const resp = await fetch("/api/forecast/overall/");
+      if (!resp.ok) {
+        document.getElementById("error").textContent =
+          "Failed to load data: HTTP " + resp.status;
+        return;
+      }
+      const data = await resp.json();
+
+      // --- Observed history: solid line ---
+      const histX = data.history.map(p => p.period + "-01");
+      const histY = data.history.map(p => p.value);
+
+      const observed = {
+        x: histX,
+        y: histY,
+        mode: "lines",
+        name: "Observed (FAO)",
+        line: { color: "#1f77b4", width: 2 },      // solid blue
+      };
+
+      const traces = [observed];
+
+      // --- Forecast: dashed line, distinct colour ---
+      // CONTINUITY: prepend the LAST observed point so the dashed forecast line
+      // begins exactly where the solid observed line ends — no floating gap, and
+      // the handoff month is drawn once by history, then only referenced here.
+      if (data.forecast && data.forecast.points.length) {
+        const lastObs = data.history[data.history.length - 1];
+        const fcX = [lastObs.period + "-01", ...data.forecast.points.map(p => p.period + "-01")];
+        const fcY = [lastObs.value, ...data.forecast.points.map(p => p.value)];
+
+        traces.push({
+          x: fcX,
+          y: fcY,
+          mode: "lines+markers",
+          name: "Forecast (SARIMA)",
+          line: { color: "#d62728", width: 2, dash: "dash" },  // dashed red
+          marker: { color: "#d62728", size: 6 },
+        });
+      }
+
+      // READABILITY: default the visible window to recent years (2021 onward) so
+      // the 3-month forecast handoff is clearly visible; full history stays
+      // zoomable via the range slider.
+      const layout = {
+        title: "FFPI OVERALL — Observed history and SARIMA forecast",
+        xaxis: {
+          title: "Month",
+          type: "date",
+          range: ["2021-01-01", "2026-10-01"],
+          rangeslider: { visible: true },
+        },
+        yaxis: { title: "Index (2014–2016 = 100)" },
+        legend: { orientation: "h", y: 1.08 },
+        hovermode: "x unified",
+      };
+
+      Plotly.newPlot("chart", traces, layout, { responsive: true });
+    }
+
+    draw();
+  </script>
+</body>
+</html>
