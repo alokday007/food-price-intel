@@ -17,6 +17,9 @@ COPY . .
 
 EXPOSE 8000
 
-# Dev command (used by docker-compose). For production, run gunicorn instead, e.g.:
-#   gunicorn config.wsgi:application --bind 0.0.0.0:8000
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Production launch (default image CMD, used by Render). Bind to $PORT, which
+# Render injects; default to 8000 when unset. migrate / collectstatic / seed are
+# run as separate release steps, not baked into the CMD.
+# Local docker-compose overrides this with the dev server (see the web service's
+# `command:` in docker-compose.yml), so local dev is unchanged.
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]

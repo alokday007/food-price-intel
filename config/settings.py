@@ -1,13 +1,19 @@
 """
 Django settings for the Food Price Intelligence project (config).
 
-Phase 0: infrastructure only. Everything that varies between environments is
-driven from environment variables (loaded from a local .env via python-dotenv).
+Everything that varies between environments is driven from environment variables
+(loaded from a local .env via python-dotenv in dev; injected directly in prod).
 No secrets are committed — see .env.example for the full variable list.
+
+Production target (Phase 7a): Render web service building from the Dockerfile,
+external Neon Postgres via DATABASE_URL, no Redis. The defaults here are
+production-safe (DEBUG off, SECRET_KEY required) while the local .env keeps
+docker-compose dev working exactly as before.
 """
 
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 import os
 
@@ -26,10 +32,27 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 # --- Core security / debug ---
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-change-me-in-env")
+# DEBUG defaults to False (production-safe); the local .env sets DEBUG=True.
 DEBUG = env_bool("DEBUG", False)
+
+# SECRET_KEY: a dev default is acceptable only when DEBUG is on. In production
+# (DEBUG=False) an unset key is a hard error — fail loudly rather than ship a
+# guessable key.
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-dev-only-change-me"
+    else:
+        raise RuntimeError(
+            "SECRET_KEY environment variable is required when DEBUG=False."
+        )
+
 ALLOWED_HOSTS = [
-    h.strip() for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()
+    h.strip()
+    for h in os.getenv(
+        "ALLOWED_HOSTS", "localhost,127.0.0.1,.onrender.com"
+    ).split(",")
+    if h.strip()
 ]
 
 # --- Applications ---
@@ -48,6 +71,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise must sit immediately after SecurityMiddleware so it can serve
+    # static files (incl. admin CSS) with DEBUG=False, before other middleware.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -77,25 +103,46 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# --- Database (PostgreSQL via psycopg 3, from POSTGRES_* env vars) ---
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB", "foodpriceintel"),
-        "USER": os.getenv("POSTGRES_USER", "foodpriceintel"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
-        "HOST": os.getenv("POSTGRES_HOST", "localhost"),
-        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+# --- Database ---
+# In production Render/Neon inject a single DATABASE_URL; use it when present.
+# Otherwise fall back to the discrete POSTGRES_* vars so docker-compose local dev
+# is unchanged. dj_database_url parses either into Django's DATABASES dict.
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB", "foodpriceintel"),
+            "USER": os.getenv("POSTGRES_USER", "foodpriceintel"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
+            "HOST": os.getenv("POSTGRES_HOST", "localhost"),
+            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        }
+    }
 
-# --- Cache (Django's built-in RedisCache, from REDIS_URL) ---
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+# --- Cache ---
+# Redis is dropped from production (nothing uses it yet), so the cache config is
+# guarded: use RedisCache only when REDIS_URL is set (local docker-compose), and
+# fall back to in-process LocMemCache otherwise. This keeps startup — and the
+# cache round-trip in /healthz/ — working with no Redis present.
+REDIS_URL = os.getenv("REDIS_URL")
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+        }
     }
-}
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
 
 # --- Password validation ---
 AUTH_PASSWORD_VALIDATORS = [
@@ -111,7 +158,17 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# --- Static files ---
+# --- Static files (WhiteNoise) ---
+# STATIC_ROOT is where collectstatic gathers files for WhiteNoise to serve in
+# production. The compressed+manifest storage lets WhiteNoise serve hashed,
+# far-future-cacheable assets with DEBUG=False.
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

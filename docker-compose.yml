@@ -2,6 +2,9 @@ services:
   web:
     build: .
     env_file: .env
+    # Local dev runs the Django dev server (auto-reload), overriding the image's
+    # production gunicorn CMD. Production (Render) uses the Dockerfile CMD as-is.
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     ports:
       - "8000:8000"
     depends_on:
