@@ -1,4 +1,4 @@
-"""Fit SARIMA on the full OVERALL FFPI series and persist a forward forecast (Phase 5).
+"""Fit SARIMA on a full FFPI series and persist a forward forecast (Phase 5, generalised in 8a).
 
 This is the persistence step, not an evaluation: unlike ``evaluate_sarima`` (which
 walk-forwards over history), here we fit once on ALL observed data through the
@@ -12,6 +12,11 @@ re-running is a fresh forecast event, so it creates a new ForecastRun rather tha
 mutating history. This keeps an audit trail of successive forecasts and is the
 natural fit for the model (append-only historical facts). It cannot create
 duplicate *points* within a run — unique(run, period) guarantees that.
+
+Phase 8a adds ``--group`` (default OVERALL, so existing invocations are
+unchanged). Each group gets its own run carrying its own commodity_group FK, so
+the six series' forecasts stay isolated from one another as well as from the
+observations table.
 """
 
 from __future__ import annotations
@@ -28,17 +33,31 @@ from apps.forecasting.sarima import (
     DEFAULT_SEASONAL_ORDER,
     SarimaForecaster,
 )
-from apps.catalog.models import CommodityGroup, DataSource
+from apps.forecasting.series import (
+    DEFAULT_GROUP,
+    GROUP_CODES,
+    assert_contiguous_monthly,
+    get_group,
+    load_group_series,
+)
+from apps.catalog.models import DataSource
 from apps.prices.models import PriceIndexMonthly
 
-OVERALL_CODE = "OVERALL"
 FAO_SOURCE_NAME = "FAO FFPI"
 
 
 class Command(BaseCommand):
-    help = "Fit SARIMA on the full OVERALL FFPI series and persist a forward forecast."
+    help = "Fit SARIMA on one full FFPI series and persist a forward forecast."
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            "--group",
+            default=DEFAULT_GROUP,
+            help=(
+                f"Commodity group code to forecast. Default {DEFAULT_GROUP} "
+                f"(backward compatible). Known: {', '.join(GROUP_CODES)}."
+            ),
+        )
         parser.add_argument(
             "--horizon",
             type=int,
@@ -51,9 +70,9 @@ class Command(BaseCommand):
         if horizon < 1:
             raise CommandError("--horizon must be >= 1.")
 
-        group = self._get_group()
-        series = self._load_overall_series(group)
-        self._assert_contiguous_monthly(series)
+        group = get_group(options["group"].strip().upper())
+        series = load_group_series(group)
+        assert_contiguous_monthly(series)
 
         train_end = series.index[-1]
         forecast_periods = [
@@ -104,37 +123,6 @@ class Command(BaseCommand):
         obs_after = PriceIndexMonthly.objects.count()
         self._report(series, run, points, obs_before, obs_after)
 
-    # -- data loading (mirrors the evaluate commands) -----------------------
-
-    def _get_group(self) -> CommodityGroup:
-        try:
-            return CommodityGroup.objects.get(code=OVERALL_CODE)
-        except CommodityGroup.DoesNotExist:
-            raise CommandError(f"CommodityGroup '{OVERALL_CODE}' not found — seed_catalog.")
-
-    def _load_overall_series(self, group: CommodityGroup) -> pd.Series:
-        rows = list(
-            PriceIndexMonthly.objects.filter(commodity_group=group)
-            .order_by("period")
-            .values_list("period", "value_nominal")
-        )
-        if not rows:
-            raise CommandError(
-                f"No {OVERALL_CODE} rows in PriceIndexMonthly — run ingest_ffpi first."
-            )
-        index = pd.DatetimeIndex([pd.Timestamp(p) for p, _ in rows])
-        values = [float(v) for _, v in rows]
-        return pd.Series(values, index=index, name=OVERALL_CODE)
-
-    def _assert_contiguous_monthly(self, series: pd.Series) -> None:
-        expected = pd.date_range(series.index.min(), series.index.max(), freq="MS")
-        if len(series) != len(expected) or not series.index.equals(expected):
-            missing = expected.difference(series.index)
-            raise CommandError(
-                f"OVERALL series is not contiguous monthly; missing "
-                f"{[f'{m:%Y-%m}' for m in missing]}"
-            )
-
     # -- reporting ----------------------------------------------------------
 
     def _report(self, series, run, points, obs_before, obs_after) -> None:
@@ -154,7 +142,11 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         # PERIOD CORRECTNESS + PLAUSIBILITY: last 3 observed beside the forecast.
-        self.stdout.write(self.style.MIGRATE_HEADING("Continuity: last 3 OBSERVED vs PREDICTED"))
+        self.stdout.write(
+            self.style.MIGRATE_HEADING(
+                f"Continuity for {run.commodity_group.code}: last 3 OBSERVED vs PREDICTED"
+            )
+        )
         for period, val in series.tail(3).items():
             self.stdout.write(f"  OBSERVED  {period:%Y-%m} = {val:.2f}")
         for p in points:
