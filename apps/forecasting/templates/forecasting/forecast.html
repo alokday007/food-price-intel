@@ -10,82 +10,275 @@
     body { font-family: system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
     h1 { margin-bottom: 0.25rem; }
     p.caption { color: #555; margin-top: 0; font-size: 0.9rem; }
+    .controls { margin: 0.75rem 0; }
+    .controls label { font-weight: 600; margin-right: 0.5rem; }
+    .controls select { font-size: 1rem; padding: 0.2rem 0.4rem; }
     #chart { width: 100%; height: 560px; }
     #error { color: #b00020; }
+    #scoreboard { margin-top: 1rem; }
+    #scoreboard h2 { font-size: 1.05rem; margin-bottom: 0.25rem; }
+    #scoreboard ul { margin: 0.25rem 0; padding-left: 1.25rem; }
+    #scoreboard li { margin: 0.2rem 0; }
+    #scoreboard .note { color: #555; font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <h1>FAO Food Price Index — OVERALL</h1>
+  <h1 id="heading">FAO Food Price Index</h1>
   <p class="caption">
-    Observed history (FAO) flowing into a 1–3 month SARIMA forecast.
+    Observed history (FAO) flowing into a 1–3 month SARIMA forecast, next to a
+    "no change" baseline that simply repeats the last observed value.
     Index base period 2014–2016 = 100.
   </p>
+  <div class="controls">
+    <label for="series">Series</label>
+    <select id="series"></select>
+  </div>
   <div id="chart"></div>
   <p id="error"></p>
+  <section id="scoreboard" hidden>
+    <h2>How has SARIMA done historically?</h2>
+    <ul id="verdicts"></ul>
+    <p class="note" id="scoreboard-note"></p>
+  </section>
 
+  {{ series|json_script:"series-data" }}
   <script>
-    async function draw() {
-      const resp = await fetch("/api/forecast/overall/");
+    const SERIES = JSON.parse(document.getElementById("series-data").textContent);
+    const DEFAULT_SERIES = "overall";
+    const HORIZON_WORDS = { "1": "1-month ahead", "3": "3-month ahead" };
+
+    const select = document.getElementById("series");
+    for (const s of SERIES) {
+      const opt = document.createElement("option");
+      opt.value = s.code;
+      opt.textContent = s.label;
+      select.appendChild(opt);
+    }
+
+    // ?series= is the shareable state. Unknown or missing values fall back to
+    // OVERALL (and the bogus param is dropped from the URL).
+    function seriesFromUrl() {
+      const raw = (new URLSearchParams(window.location.search).get("series") || "").toLowerCase();
+      return SERIES.some(s => s.code === raw) ? raw : DEFAULT_SERIES;
+    }
+
+    function setUrl(code, push) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("series", code);
+      if (push) history.pushState({ series: code }, "", url);
+      else history.replaceState({ series: code }, "", url);
+    }
+
+    function addMonths(period, n) {
+      const [y, m] = period.split("-").map(Number);
+      const d = new Date(Date.UTC(y, m - 1 + n, 1));
+      return d.toISOString().slice(0, 10);
+    }
+
+    // Y-range fitted to an x window: every trace's points from xStart through
+    // xEnd (inclusive, ISO date strings compare lexically), plus each trace's
+    // nearest point just outside either edge — the line segment to it is drawn
+    // inside the window, so it must not be clipped at the top or bottom. 5%
+    // padding each side. Null if nothing falls in the window. (Trace x is sorted.)
+    const Y_PAD = 0.05;
+    function yRangeFor(traces, xStart, xEnd) {
+      const ys = [];
+      for (const t of traces) {
+        let before = -1, after = -1;
+        t.x.forEach((x, i) => {
+          if (x < xStart) before = i;
+          else if (xEnd !== null && x > xEnd) { if (after === -1) after = i; }
+          else ys.push(t.y[i]);
+        });
+        // Only if a segment from that point actually runs into the window (a
+        // trace lying wholly beyond one edge contributes nothing).
+        if (before !== -1 && before + 1 < t.x.length) ys.push(t.y[before]);
+        if (after > 0) ys.push(t.y[after]);
+      }
+      if (!ys.length) return null;
+      const lo = Math.min(...ys), hi = Math.max(...ys);
+      const pad = (hi - lo) * Y_PAD || Math.abs(hi) * Y_PAD || 1;
+      return [lo - pad, hi + pad];
+    }
+
+    function verdictSentence(h, row, tiePct) {
+      const pct = (Math.abs(row.rel_delta) * 100).toFixed(1) + "%";
+      const lead = HORIZON_WORDS[h] || (h + "-month ahead");
+      if (row.verdict === "BEATS") return `${lead}: SARIMA beats the no-change baseline by ${pct}.`;
+      if (row.verdict === "LOSES") return `${lead}: SARIMA is worse than the no-change baseline by ${pct}.`;
+      return `${lead}: SARIMA ties the no-change baseline (within ${tiePct}).`;
+    }
+
+    function renderScoreboard(sb) {
+      const section = document.getElementById("scoreboard");
+      const list = document.getElementById("verdicts");
+      list.replaceChildren();
+      if (!sb) {
+        section.hidden = true;
+        return;
+      }
+      const tiePct = Math.round(sb.tie_threshold * 100) + "%";
+      for (const h of Object.keys(sb.horizons).sort((a, b) => a - b)) {
+        const li = document.createElement("li");
+        li.textContent = verdictSentence(h, sb.horizons[h], tiePct);
+        list.appendChild(li);
+      }
+      document.getElementById("scoreboard-note").textContent =
+        `Mean absolute error over an expanding-window walk-forward, evaluated through ${sb.eval_end}. ` +
+        `"Ties" means the two errors are within ${tiePct} of each other.`;
+      section.hidden = false;
+    }
+
+    async function draw(code) {
+      const errorEl = document.getElementById("error");
+      errorEl.textContent = "";
+      const resp = await fetch(`/api/forecast/${code}/`);
       if (!resp.ok) {
-        document.getElementById("error").textContent =
-          "Failed to load data: HTTP " + resp.status;
+        errorEl.textContent = "Failed to load data: HTTP " + resp.status;
         return;
       }
       const data = await resp.json();
+      document.getElementById("heading").textContent =
+        data.commodity_group === "OVERALL" ? "FAO Food Price Index" : `FAO ${data.label} Price Index`;
 
       // --- Observed history: solid line ---
-      const histX = data.history.map(p => p.period + "-01");
-      const histY = data.history.map(p => p.value);
-
-      const observed = {
-        x: histX,
-        y: histY,
+      const traces = [{
+        x: data.history.map(p => p.period + "-01"),
+        y: data.history.map(p => p.value),
         mode: "lines",
         name: "Observed (FAO)",
-        line: { color: "#1f77b4", width: 2 },      // solid blue
+        line: { color: "#1f77b4", width: 2 },        // solid blue
+      }];
+
+      // CONTINUITY: both forecast lines start from the observed value at the
+      // run's train_end, so they leave the solid line from the same point.
+      let lastPeriod = data.history.length ? data.history[data.history.length - 1].period : null;
+      const anchorOf = fc => {
+        const obs = data.history.find(p => p.period === fc.train_end);
+        return obs ? [obs.period + "-01", obs.value] : null;
       };
 
-      const traces = [observed];
-
-      // --- Forecast: dashed line, distinct colour ---
-      // CONTINUITY: prepend the LAST observed point so the dashed forecast line
-      // begins exactly where the solid observed line ends — no floating gap, and
-      // the handoff month is drawn once by history, then only referenced here.
       if (data.forecast && data.forecast.points.length) {
-        const lastObs = data.history[data.history.length - 1];
-        const fcX = [lastObs.period + "-01", ...data.forecast.points.map(p => p.period + "-01")];
-        const fcY = [lastObs.value, ...data.forecast.points.map(p => p.value)];
-
+        const anchor = anchorOf(data.forecast);
+        const pts = data.forecast.points;
         traces.push({
-          x: fcX,
-          y: fcY,
+          x: [...(anchor ? [anchor[0]] : []), ...pts.map(p => p.period + "-01")],
+          y: [...(anchor ? [anchor[1]] : []), ...pts.map(p => p.value)],
           mode: "lines+markers",
-          name: "Forecast (SARIMA)",
-          line: { color: "#d62728", width: 2, dash: "dash" },  // dashed red
+          name: "SARIMA forecast",
+          line: { color: "#d62728", width: 2, dash: "dash" },   // dashed red
           marker: { color: "#d62728", size: 6 },
+        });
+        lastPeriod = pts[pts.length - 1].period;
+      }
+
+      if (data.naive_forecast && data.naive_forecast.points.length) {
+        const pts = data.naive_forecast.points;
+        traces.push({
+          x: [data.naive_forecast.train_end + "-01", ...pts.map(p => p.period + "-01")],
+          y: [data.naive_forecast.anchor_value, ...pts.map(p => p.value)],
+          mode: "lines",
+          name: 'No-change baseline (naive_1)',
+          line: { color: "#8c8c8c", width: 2, dash: "dot" },    // dotted, muted grey
         });
       }
 
       // READABILITY: default the visible window to recent years (2021 onward) so
-      // the 3-month forecast handoff is clearly visible; full history stays
-      // zoomable via the range slider.
+      // the forecast handoff is clearly visible, running a couple of months past
+      // the last forecast point; full history stays zoomable via the range slider.
+      const X_START = "2021-01-01";
+      const X_END = lastPeriod ? addMonths(lastPeriod, 2) : undefined;
+      const yRange = yRangeFor(traces, X_START, lastPeriod ? lastPeriod + "-01" : null);
       const layout = {
-        title: "FFPI OVERALL — Observed history and SARIMA forecast",
+        title: `${data.label} — observed history, SARIMA forecast and no-change baseline`,
         xaxis: {
           title: "Month",
           type: "date",
-          range: ["2021-01-01", "2026-10-01"],
-          rangeslider: { visible: true },
+          range: [X_START, X_END],
+          // Zoom, pan, the zoom-out button and double-click autosize all stop at
+          // the data: earliest observed month .. ~2 months past the last forecast.
+          minallowed: data.history.length ? data.history[0].period + "-01" : undefined,
+          maxallowed: X_END,
+          // Keep the minimap showing the full history, not the main plot's y-range.
+          rangeslider: { visible: true, yaxis: { rangemode: "auto" } },
         },
-        yaxis: { title: "Index (2014–2016 = 100)" },
+        // Recomputed on every draw (series sit at very different levels). Being
+        // the initial layout, it is also where Plotly's double-click reset returns.
+        yaxis: yRange
+          ? { title: "Index (2014–2016 = 100)", range: yRange }
+          : { title: "Index (2014–2016 = 100)", autorange: true },
         legend: { orientation: "h", y: 1.08 },
         hovermode: "x unified",
+        dragmode: "zoom",
       };
 
-      Plotly.newPlot("chart", traces, layout, { responsive: true });
+      // newPlot (not react) so any zoom/pan from the previous series is discarded.
+      Plotly.purge("chart");
+      await Plotly.newPlot("chart", traces, layout, {
+        responsive: true,
+        // Selection tools do nothing useful on a time series here.
+        modeBarButtonsToRemove: ["select2d", "lasso2d"],
+        // Plotly only counts a double-click if the 2nd mouse-UP is handled within
+        // this many ms of the 1st mouse-DOWN (default 300). Human double-clicks
+        // plus ordinary main-thread jitter intermittently overran 300 and were
+        // demoted to single clicks, so reset/autosize silently did nothing.
+        doubleClickDelay: 500,
+      });
+
+      // With a range slider Plotly locks the y-axis (fixedrange), so manual zoom
+      // is x-only. Re-fit y to the visible x window after any x change (drag
+      // zoom, slider, double-click reset/autosize) so zooming out to older years
+      // never leaves data off-screen.
+      //
+      // Unified hover lists every trace with a point within `hoverdistance` px
+      // of the cursor, so at the default 20px the Observed line "borrows" its
+      // last month into forecast months. Half a month in pixels keeps each trace
+      // to its own point at the hovered month; it depends on zoom and width, so
+      // it is recomputed on every relayout (including responsive resizes).
+      // Our own relayout carries no x keys and leaves hoverdistance unchanged on
+      // the follow-up event, so this never loops.
+      const chartEl = document.getElementById("chart");
+      const halfMonthPx = () => {
+        const xa = chartEl._fullLayout.xaxis;
+        const monthPx = Math.abs(xa.d2p("2001-02-01") - xa.d2p("2001-01-01"));
+        return Math.max(1, Math.ceil(monthPx / 2));
+      };
+      const syncAxes = ev => {
+        const update = {};
+        if (Object.keys(ev).some(k => k.startsWith("xaxis."))) {
+          const [x0, x1] = chartEl._fullLayout.xaxis.range.map(String);
+          const r = yRangeFor(traces, x0, x1);
+          if (r) update["yaxis.range"] = r;
+        }
+        const hd = halfMonthPx();
+        if (hd !== chartEl._fullLayout.hoverdistance) update.hoverdistance = hd;
+        if (Object.keys(update).length) Plotly.relayout(chartEl, update);
+      };
+      chartEl.on("plotly_relayout", syncAxes);
+      syncAxes({});
+      renderScoreboard(data.scoreboard);
     }
 
-    draw();
+    select.addEventListener("change", () => {
+      setUrl(select.value, true);
+      draw(select.value);
+    });
+
+    window.addEventListener("popstate", () => {
+      const code = seriesFromUrl();
+      select.value = code;
+      draw(code);
+    });
+
+    const initial = seriesFromUrl();
+    select.value = initial;
+    const requested = new URLSearchParams(window.location.search).get("series");
+    if (requested !== null && requested.toLowerCase() !== initial) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("series");
+      history.replaceState(null, "", url);
+    }
+    draw(initial);
   </script>
 </body>
 </html>

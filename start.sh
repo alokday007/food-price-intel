@@ -6,9 +6,11 @@
 # are safe to repeat on every restart:
 #   - migrate       : no-op once the schema is current
 #   - seed_catalog  : update_or_create on natural keys (dimension rows)
-#   - seed_from_csv : update_or_create on (commodity_group, period) — 0 rows created
+#   - seed_from_csv : loads all 6 FFPI series from data/seed/ffpi_observed.csv;
+#                     update_or_create on (commodity_group, period) — 0 rows created
 #                     on a second run, and it *requires* seed_catalog to have run
-#                     (it looks up CommodityGroup 'OVERALL' + DataSource 'FAO FFPI')
+#                     (it looks up the CommodityGroup rows + DataSource 'FAO FFPI'
+#                     and aborts on any unknown group code)
 #   - collectstatic : gathers assets into STATIC_ROOT for WhiteNoise (DEBUG=False)
 #
 # Local docker-compose is unaffected: the web service overrides the image command
@@ -22,7 +24,7 @@ echo "==> seed_catalog"
 python manage.py seed_catalog
 
 echo "==> seed_from_csv"
-python manage.py seed_from_csv
+python manage.py seed_from_csv --file data/seed/ffpi_observed.csv
 
 echo "==> collectstatic"
 python manage.py collectstatic --noinput

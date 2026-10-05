@@ -25,6 +25,8 @@ from __future__ import annotations
 import json
 import sys
 from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 from django.core.management.base import BaseCommand, CommandError
@@ -188,10 +190,12 @@ def evaluate_group(
             "naive_1": naive_metrics[h],
             "rel_delta": relative_delta(sarima_mae, naive_mae),
             "verdict": verdict(sarima_mae, naive_mae),
+            "folds": count_folds([s for s in sarima_steps if s.horizon == h]),
         }
 
     return {
         "group": code,
+        "initial_train_end": f"{initial_train_end:%Y-%m}",
         "phase3_regression_checked": check_phase3,
         "n_months": len(series),
         "first": f"{series.index.min():%Y-%m}",
@@ -240,10 +244,20 @@ class Command(BaseCommand):
                 "cross-series scoreboard with verdict totals counted from them."
             ),
         )
+        parser.add_argument(
+            "--out",
+            default=None,
+            help=(
+                "With --summarize: also write the scoreboard JSON artifact here "
+                "(e.g. data/seed/scoreboard.json)."
+            ),
+        )
 
     def handle(self, *args, **options):
+        if options["out"] and not options["summarize"]:
+            raise CommandError("--out is only valid with --summarize.")
         if options["summarize"]:
-            self._summarize(sys.stdin)
+            self._summarize(sys.stdin, options["out"])
             return
 
         code = options["group"].strip().upper()
@@ -317,11 +331,27 @@ class Command(BaseCommand):
             "A tie or loss to the random walk is an honest, valid result."
         )
 
-    def _summarize(self, stream) -> None:
-        """Cross-series scoreboard; totals are counted from verdict(), never typed."""
+    def _summarize(self, stream, out: str | None = None) -> None:
+        """Cross-series scoreboard; totals are counted from verdict(), never typed.
+
+        With ``out``, also writes the scoreboard artifact the web app serves
+        (production cannot afford the walk-forward, so it ships as a file).
+        """
         results = [json.loads(line) for line in stream if line.strip()]
         if not results:
             raise CommandError("--summarize: no JSON result lines on stdin.")
+        groups = [r["group"] for r in results]
+        if len(set(groups)) != len(groups):
+            raise CommandError(f"--summarize: duplicate groups in input {groups}.")
+        eval_ends = {r["last"] for r in results}
+        if len(eval_ends) != 1:
+            raise CommandError(
+                f"--summarize: results cover different eval_end months {sorted(eval_ends)} "
+                "— re-run every group on the same data."
+            )
+
+        if out:
+            self._write_scoreboard(results, eval_ends.pop(), out)
 
         header = (
             f"{'group':<9}{'H':>3}{'last':>9}{'SARIMA MAE':>12}{'naive_1 MAE':>13}"
@@ -348,3 +378,45 @@ class Command(BaseCommand):
             + " / ".join(f"{v} {tally[v]}" for v in ("BEATS", "TIES", "LOSES"))
             + f"   [TIES = |delta| < {TIE_REL_THRESHOLD:.0%} of naive_1 MAE]"
         )
+
+    def _write_scoreboard(self, results: list[dict], eval_end: str, out: str) -> None:
+        """Write the committed scoreboard JSON. Generated only here — never hand-edit."""
+        scoreboard_groups = {}
+        tally: Counter[str] = Counter()
+        for result in results:
+            entry = {}
+            for h in HORIZONS:
+                row = result["horizons"][str(h)]
+                sarima_mae = row["sarima"]["mae"]
+                naive_mae = row["naive_1"]["mae"]
+                call = verdict(sarima_mae, naive_mae)
+                tally[call] += 1
+                entry[str(h)] = {
+                    "sarima_mae": round(sarima_mae, 4),
+                    "naive_1_mae": round(naive_mae, 4),
+                    "rel_delta": round(relative_delta(sarima_mae, naive_mae), 5),
+                    "verdict": call,
+                    "folds": row["folds"],
+                }
+            scoreboard_groups[result["group"]] = entry
+
+        payload = {
+            "generated_by": "manage.py evaluate_sarima --summarize --out (do not hand-edit)",
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "eval_end": eval_end,
+            "initial_train_end": results[0]["initial_train_end"],
+            "tie_threshold": TIE_REL_THRESHOLD,
+            "model": {
+                "name": "sarima",
+                "order": list(DEFAULT_ORDER),
+                "seasonal_order": list(DEFAULT_SEASONAL_ORDER),
+            },
+            "baseline": "naive_1",
+            "horizons": list(HORIZONS),
+            "totals": {v: tally[v] for v in ("BEATS", "TIES", "LOSES")},
+            "groups": scoreboard_groups,
+        }
+        path = Path(out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        self.stdout.write(self.style.SUCCESS(f"Wrote scoreboard for {list(scoreboard_groups)} to {path}"))

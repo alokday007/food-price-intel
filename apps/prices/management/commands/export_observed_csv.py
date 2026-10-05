@@ -1,7 +1,8 @@
-"""Export the observed OVERALL FFPI series to a committed seed CSV (Phase 7a).
+"""Export all six observed FFPI series to a committed seed CSV (Phase 7a, all groups in 8b).
 
-This dumps the current ``PriceIndexMonthly`` OVERALL rows (period, value_nominal)
-to ``data/seed/ffpi_overall.csv``. That file IS committed: it is small, public
+This dumps every ``PriceIndexMonthly`` row for the six FFPI groups
+(commodity_group, period, value_nominal, value_real) to
+``data/seed/ffpi_observed.csv``. That file IS committed: it is small, public
 CC-BY FAO data, and it makes the deploy reproducible without shipping the raw
 xlsx workbook. ``data/seed/`` is deliberately NOT gitignored (only ``data/raw/``
 is). The deploy-time counterpart that loads this file is ``seed_from_csv``.
@@ -15,39 +16,41 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.forecasting.series import GROUP_CODES
 from apps.prices.models import PriceIndexMonthly
 
-OVERALL_CODE = "OVERALL"
-SEED_PATH = Path(settings.BASE_DIR) / "data" / "seed" / "ffpi_overall.csv"
+SEED_PATH = Path(settings.BASE_DIR) / "data" / "seed" / "ffpi_observed.csv"
+HEADER = ["commodity_group", "period", "value_nominal", "value_real"]
 
 
 class Command(BaseCommand):
-    help = "Export observed OVERALL PriceIndexMonthly rows to data/seed/ffpi_overall.csv."
+    help = "Export observed PriceIndexMonthly rows for all 6 FFPI groups to data/seed/ffpi_observed.csv."
 
     def handle(self, *args, **options):
         rows = list(
-            PriceIndexMonthly.objects.filter(commodity_group__code=OVERALL_CODE)
-            .order_by("period")
-            .values_list("period", "value_nominal")
+            PriceIndexMonthly.objects.filter(commodity_group__code__in=GROUP_CODES)
+            .order_by("commodity_group__code", "period")
+            .values_list("commodity_group__code", "period", "value_nominal", "value_real")
         )
-        if not rows:
+        present = {code for code, *_ in rows}
+        missing = [code for code in GROUP_CODES if code not in present]
+        if missing:
             raise CommandError(
-                f"No {OVERALL_CODE} rows in PriceIndexMonthly — nothing to export."
+                f"No PriceIndexMonthly rows for {missing} — refusing to write a partial seed."
             )
 
         SEED_PATH.parent.mkdir(parents=True, exist_ok=True)
         with SEED_PATH.open("w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
-            writer.writerow(["period", "value_nominal"])
-            for period, value in rows:
-                writer.writerow([period.strftime("%Y-%m-%d"), value])
+            writer.writerow(HEADER)
+            for code, period, nominal, real in rows:
+                writer.writerow(
+                    [code, period.strftime("%Y-%m-%d"), nominal, "" if real is None else real]
+                )
 
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Wrote {len(rows)} {OVERALL_CODE} rows to {SEED_PATH}"
+        self.stdout.write(self.style.SUCCESS(f"Wrote {len(rows)} rows to {SEED_PATH}"))
+        for code in GROUP_CODES:
+            periods = [p for c, p, *_ in rows if c == code]
+            self.stdout.write(
+                f"  {code:<8} {len(periods)} rows  {periods[0]:%Y-%m}..{periods[-1]:%Y-%m}"
             )
-        )
-        self.stdout.write(
-            f"  first: {rows[0][0]:%Y-%m-%d},{rows[0][1]}  "
-            f"last: {rows[-1][0]:%Y-%m-%d},{rows[-1][1]}"
-        )
