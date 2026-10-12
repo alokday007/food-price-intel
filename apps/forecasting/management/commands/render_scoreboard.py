@@ -15,6 +15,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from apps.forecasting.display import format_delta_pct
 from apps.forecasting.views import SCOREBOARD_PATH, SERIES_LABELS
 
 README_PATH = Path(settings.BASE_DIR) / "README.md"
@@ -45,7 +46,7 @@ def render_block(scoreboard: dict) -> str:
             lines.append(
                 f"| {SERIES_LABELS.get(code, code)} | {HORIZON_WORDS.get(h, h + ' months')} "
                 f"| {row['folds']} | {row['sarima_mae']:.3f} | {row['naive_1_mae']:.3f} "
-                f"| {row['rel_delta']:+.1%} | **{VERDICT_WORDS[row['verdict']]}** the baseline |"
+                f"| {format_delta_pct(row['rel_delta'])} | **{VERDICT_WORDS[row['verdict']]}** the baseline |"
             )
     lines += [
         "",

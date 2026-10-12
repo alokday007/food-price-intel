@@ -25,7 +25,6 @@ import json
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import lightgbm
@@ -39,6 +38,7 @@ from apps.forecasting.baseline import (
     naive_last_predict,
     walk_forward,
 )
+from apps.forecasting.display import format_delta_pct
 from apps.forecasting.lgbm import (
     FEATURES,
     LGBM_PARAMS,
@@ -80,18 +80,6 @@ def load_panel(eval_end: pd.Timestamp) -> dict[str, pd.Series]:
             raise CommandError(f"{code}: eval_end {eval_end:%Y-%m} not in series.")
         panel[code] = series.loc[:eval_end]
     return panel
-
-
-def _pct(rel_delta: float) -> str:
-    """Signed 1-dp percent of a stored (5 dp) rel_delta, rounded like the live site.
-
-    The site renders ``(Math.abs(rel_delta) * 100).toFixed(1)``, and ``toFixed``
-    rounds an exact half UP (0.0225 -> "2.3"), whereas Python's ``:.1%`` rounds
-    half to even on the binary value (0.0225 -> "2.2"). Mirror the site so a
-    delta reads the same here as on /forecast/.
-    """
-    mag = Decimal(abs(rel_delta) * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    return f"{'-' if rel_delta < 0 else '+'}{mag}%"
 
 
 def _step_keys(steps):
@@ -280,7 +268,7 @@ class Command(BaseCommand):
             for h, row in entry.items():
                 mae = row["mae"]
                 cells = "".join(
-                    f"{_pct(row['rel_delta_vs_naive_1'][m]):>6} {row['verdict_vs_naive_1'][m]:<8}"
+                    f"{format_delta_pct(row['rel_delta_vs_naive_1'][m]):>6}{row['verdict_vs_naive_1'][m]:<8}"
                     for m in MODELS
                 )
                 self.stdout.write(

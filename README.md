@@ -33,7 +33,7 @@ Evaluated through **2026-09** — expanding-window walk-forward from 2015-12, SA
 | Food Price Index | 3 months | 127 | 4.285 | 4.309 | -0.6% | **ties** the baseline |
 | Cereals | 1 month | 129 | 2.778 | 2.750 | +1.0% | **ties** the baseline |
 | Cereals | 3 months | 127 | 5.894 | 5.468 | +7.8% | **loses to** the baseline |
-| Vegetable Oils | 1 month | 129 | 5.566 | 5.694 | -2.2% | **beats** the baseline |
+| Vegetable Oils | 1 month | 129 | 5.566 | 5.694 | -2.3% | **beats** the baseline |
 | Vegetable Oils | 3 months | 127 | 12.537 | 12.057 | +4.0% | **loses to** the baseline |
 | Dairy | 1 month | 129 | 2.072 | 2.579 | -19.6% | **beats** the baseline |
 | Dairy | 3 months | 127 | 5.701 | 6.627 | -14.0% | **beats** the baseline |
