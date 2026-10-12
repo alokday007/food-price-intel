@@ -7,6 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# LightGBM's wheel links against the GNU OpenMP runtime (libgomp.so.1), which
+# python:*-slim does not ship; without it `import lightgbm` fails (Phase 9a).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first so the layer caches across code changes.
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
