@@ -246,3 +246,92 @@ class LgbmPooledForecaster:
 
     def feature_names(self) -> list[str]:
         return FEATURES + [SERIES_FEATURE]
+
+
+# ---------------------------------------------------------------------------
+# Phase 9a.1 — pooled LightGBM with a scale-free target
+# (pre-registered in docs/experiments/9a1_prereg.md; the 9a classes above are
+# untouched). The ONLY change vs ``LgbmPooledForecaster``: the target is
+# ``log(y[t+h] / y[t])`` and the ``chg_*`` features are built on monthly LOG
+# changes, so no single series' scale dominates the shared L2 loss. Forecast =
+# ``y[t] * exp(predicted log change)``. Params, month, level_rel_12m, series
+# categorical, direct per-horizon models and slicing are identical.
+# ---------------------------------------------------------------------------
+
+
+def _assert_positive(values: np.ndarray) -> np.ndarray:
+    y = np.asarray(values, dtype=float)
+    if not np.all(y > 0):  # also rejects NaN
+        raise ValueError("log-change features need strictly positive values")
+    return y
+
+
+def build_log_features(values: np.ndarray, periods: pd.DatetimeIndex) -> pd.DataFrame:
+    """``build_features`` with ``chg[t] = log(y[t]) - log(y[t-1])``.
+
+    Same columns, same backward-only construction: the ``chg_*`` columns are
+    ``build_features`` applied to ``log(y)``; ``month`` is unchanged and
+    ``level_rel_12m`` is recomputed on the raw level (it is already scale-free).
+    """
+    y = _assert_positive(values)
+    feats = build_features(np.log(y), periods)
+    level = pd.Series(y)
+    feats["level_rel_12m"] = level / level.rolling(12).mean() - 1.0
+    return feats
+
+
+def _log_training_frame(train: np.ndarray, periods: pd.DatetimeIndex, h: int):
+    """``_training_frame`` with label ``log(train[t+h] / train[t])``."""
+    feats = build_log_features(train, periods)
+    log_y = pd.Series(np.log(_assert_positive(train)))
+    label = log_y.shift(-h) - log_y
+    rows = feats.index >= MIN_HISTORY
+    rows &= label.notna().to_numpy()
+    return feats.loc[rows], label.loc[rows], feats.iloc[[-1]]
+
+
+class LgbmPooledPctForecaster(LgbmPooledForecaster):
+    """``LgbmPooledForecaster`` with the scale-free (log-change) target.
+
+    Inherits the panel slicing (``_slices`` / ``_other_series_upto``), so the
+    same cutoff-date truncation protects every series.
+    """
+
+    name = "lgbm_pooled_pct"
+
+    def _model(self, slices: dict, h: int) -> LGBMRegressor:
+        key = (h,) + tuple(
+            (code, arr.tobytes(), idx[-1].value if len(idx) else None)
+            for code, (arr, idx) in slices.items()
+        )
+        model = self._models.get(key)
+        if model is not None:
+            return model
+        Xs, ys = [], []
+        for code, (arr, idx) in slices.items():
+            X, y, _ = _log_training_frame(arr, idx, h)
+            Xs.append(self._with_series(X, code))
+            ys.append(y)
+        model = _fit(pd.concat(Xs, ignore_index=True), pd.concat(ys, ignore_index=True))
+        self._models[key] = model
+        self.n_fits += 1
+        g = model.booster_.feature_importance(importance_type="gain")
+        self.gain[h] = self.gain.get(h, 0.0) + g
+        return model
+
+    def for_series(self, target: str):
+        if target not in self.panel:
+            raise KeyError(f"{target} not in panel {self.codes}")
+        n = len(self.panel[target])
+
+        def forecast(values: np.ndarray, cutoff_idx: int, h: int) -> float:
+            if len(values) != n:
+                raise ValueError(f"values do not match the {target} series in the panel")
+            slices = self._slices(target, values, cutoff_idx)
+            train, idx = slices[target]
+            _, _, x_now = _log_training_frame(train, idx, h)
+            model = self._model(slices, h)
+            log_chg = model.predict(self._with_series(x_now, target))[0]
+            return float(train[-1] * np.exp(log_chg))
+
+        return forecast

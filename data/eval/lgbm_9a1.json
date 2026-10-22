@@ -1,0 +1,470 @@
+{
+  "generated_by": "manage.py evaluate_lgbm_9a1 (Phase 9a.1; do not hand-edit)",
+  "generated_at": "2026-10-22T13:07:06+00:00",
+  "preregistration": "docs/experiments/9a1_prereg.md",
+  "lightgbm_version": "4.5.0",
+  "eval_end": "2026-09",
+  "initial_train_end": "2015-12",
+  "horizons": [
+    1,
+    3
+  ],
+  "tie_threshold": 0.02,
+  "comparators_source": "data/eval/lgbm_9a.json (generated_at 2026-10-12T07:42:56+00:00; not re-run)",
+  "checks": {
+    "naive_1_matches_lgbm_9a": true,
+    "naive_1_matches_scoreboard": true,
+    "folds_129_127": true,
+    "params_and_features_match_9a": true
+  },
+  "design": {
+    "target": "log(y[t+h] / y[t]); forecast = y[t] * exp(predicted log change)",
+    "change_features": "chg_* built on monthly log changes; month and level_rel_12m as 9a",
+    "strategy": "direct, one model per horizon, refit every fold; series categorical",
+    "features": [
+      "chg_lag1",
+      "chg_lag2",
+      "chg_lag3",
+      "chg_lag4",
+      "chg_lag5",
+      "chg_lag6",
+      "chg_lag7",
+      "chg_lag8",
+      "chg_lag9",
+      "chg_lag10",
+      "chg_lag11",
+      "chg_lag12",
+      "chg_mean3",
+      "chg_mean6",
+      "chg_mean12",
+      "chg_std3",
+      "chg_std6",
+      "chg_std12",
+      "month",
+      "level_rel_12m"
+    ],
+    "params": {
+      "objective": "regression",
+      "n_estimators": 300,
+      "learning_rate": 0.05,
+      "num_leaves": 15,
+      "min_child_samples": 20,
+      "subsample": 0.8,
+      "subsample_freq": 1,
+      "colsample_bytree": 0.8,
+      "random_state": 42,
+      "deterministic": true,
+      "force_row_wise": true,
+      "n_jobs": 1,
+      "verbose": -1
+    }
+  },
+  "decision": {
+    "best_rows": [],
+    "B": 0,
+    "loss_rows": [
+      "OVERALL H=3",
+      "CEREALS H=1",
+      "CEREALS H=3",
+      "OILS H=3",
+      "SUGAR H=1",
+      "SUGAR H=3"
+    ],
+    "L": 6,
+    "sarima_losses": 4,
+    "rule": "SUCCESS iff B >= 2 (d < -2% vs min(SARIMA, naive_1)) and L <= 4 (LOSES vs naive_1)",
+    "verdict": "FAILURE"
+  },
+  "totals_vs_naive_1": {
+    "BEATS": 4,
+    "TIES": 2,
+    "LOSES": 6
+  },
+  "vs_9a_pooled": {
+    "better": 9,
+    "worse": 3,
+    "equal": 0
+  },
+  "groups": {
+    "OVERALL": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 1.844,
+          "sarima": 1.7045,
+          "lgbm_series": 1.7582,
+          "lgbm_pooled": 1.7239,
+          "lgbm_pooled_pct": 1.7212
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.0098,
+        "rel_delta_vs_naive_1": -0.0666,
+        "verdict_vs_naive_1": "BEATS",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 4.3094,
+          "sarima": 4.2853,
+          "lgbm_series": 4.9711,
+          "lgbm_pooled": 4.5469,
+          "lgbm_pooled_pct": 4.3957
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.02577,
+        "rel_delta_vs_naive_1": 0.02002,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      }
+    },
+    "CEREALS": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 2.7502,
+          "sarima": 2.7778,
+          "lgbm_series": 3.0727,
+          "lgbm_pooled": 2.9996,
+          "lgbm_pooled_pct": 2.8439
+        },
+        "ref_model": "naive_1",
+        "delta_vs_ref": 0.03407,
+        "rel_delta_vs_naive_1": 0.03407,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "better",
+        "best": "naive_1"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 5.4676,
+          "sarima": 5.8941,
+          "lgbm_series": 6.054,
+          "lgbm_pooled": 6.3511,
+          "lgbm_pooled_pct": 5.9196
+        },
+        "ref_model": "naive_1",
+        "delta_vs_ref": 0.08266,
+        "rel_delta_vs_naive_1": 0.08266,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "better",
+        "best": "naive_1"
+      }
+    },
+    "OILS": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 5.6945,
+          "sarima": 5.5664,
+          "lgbm_series": 6.5428,
+          "lgbm_pooled": 5.6714,
+          "lgbm_pooled_pct": 5.6618
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.01715,
+        "rel_delta_vs_naive_1": -0.00573,
+        "verdict_vs_naive_1": "TIES",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 12.0572,
+          "sarima": 12.5371,
+          "lgbm_series": 15.7096,
+          "lgbm_pooled": 13.48,
+          "lgbm_pooled_pct": 13.8192
+        },
+        "ref_model": "naive_1",
+        "delta_vs_ref": 0.14614,
+        "rel_delta_vs_naive_1": 0.14614,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "worse",
+        "best": "naive_1"
+      }
+    },
+    "DAIRY": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 2.5789,
+          "sarima": 2.0725,
+          "lgbm_series": 2.3959,
+          "lgbm_pooled": 2.3452,
+          "lgbm_pooled_pct": 2.2662
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.09348,
+        "rel_delta_vs_naive_1": -0.12124,
+        "verdict_vs_naive_1": "BEATS",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 6.6268,
+          "sarima": 5.7007,
+          "lgbm_series": 6.533,
+          "lgbm_pooled": 6.4182,
+          "lgbm_pooled_pct": 5.9847
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.04981,
+        "rel_delta_vs_naive_1": -0.0969,
+        "verdict_vs_naive_1": "BEATS",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      }
+    },
+    "MEAT": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 1.534,
+          "sarima": 1.1974,
+          "lgbm_series": 1.4053,
+          "lgbm_pooled": 1.4155,
+          "lgbm_pooled_pct": 1.3952
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.16519,
+        "rel_delta_vs_naive_1": -0.0905,
+        "verdict_vs_naive_1": "BEATS",
+        "vs_9a_pooled": "better",
+        "best": "sarima"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 3.6112,
+          "sarima": 2.9479,
+          "lgbm_series": 3.303,
+          "lgbm_pooled": 3.6373,
+          "lgbm_pooled_pct": 3.6391
+        },
+        "ref_model": "sarima",
+        "delta_vs_ref": 0.23446,
+        "rel_delta_vs_naive_1": 0.00772,
+        "verdict_vs_naive_1": "TIES",
+        "vs_9a_pooled": "worse",
+        "best": "sarima"
+      }
+    },
+    "SUGAR": {
+      "1": {
+        "folds": 129,
+        "mae": {
+          "naive_1": 4.9243,
+          "sarima": 5.2588,
+          "lgbm_series": 5.3664,
+          "lgbm_pooled": 5.362,
+          "lgbm_pooled_pct": 5.3908
+        },
+        "ref_model": "naive_1",
+        "delta_vs_ref": 0.09473,
+        "rel_delta_vs_naive_1": 0.09473,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "worse",
+        "best": "naive_1"
+      },
+      "3": {
+        "folds": 127,
+        "mae": {
+          "naive_1": 9.5269,
+          "sarima": 10.2495,
+          "lgbm_series": 10.6323,
+          "lgbm_pooled": 11.9732,
+          "lgbm_pooled_pct": 10.5016
+        },
+        "ref_model": "naive_1",
+        "delta_vs_ref": 0.10231,
+        "rel_delta_vs_naive_1": 0.10231,
+        "verdict_vs_naive_1": "LOSES",
+        "vs_9a_pooled": "better",
+        "best": "naive_1"
+      }
+    }
+  },
+  "importance_gain": {
+    "1": [
+      {
+        "feature": "chg_lag1",
+        "gain_share": 0.1499
+      },
+      {
+        "feature": "chg_lag10",
+        "gain_share": 0.0581
+      },
+      {
+        "feature": "chg_lag2",
+        "gain_share": 0.0572
+      },
+      {
+        "feature": "chg_lag8",
+        "gain_share": 0.0545
+      },
+      {
+        "feature": "chg_lag3",
+        "gain_share": 0.0524
+      },
+      {
+        "feature": "chg_lag9",
+        "gain_share": 0.0512
+      },
+      {
+        "feature": "chg_lag12",
+        "gain_share": 0.0488
+      },
+      {
+        "feature": "chg_std6",
+        "gain_share": 0.0487
+      },
+      {
+        "feature": "chg_lag7",
+        "gain_share": 0.0471
+      },
+      {
+        "feature": "chg_std12",
+        "gain_share": 0.0464
+      },
+      {
+        "feature": "chg_lag5",
+        "gain_share": 0.0431
+      },
+      {
+        "feature": "chg_lag4",
+        "gain_share": 0.0431
+      },
+      {
+        "feature": "chg_lag11",
+        "gain_share": 0.0426
+      },
+      {
+        "feature": "chg_std3",
+        "gain_share": 0.0422
+      },
+      {
+        "feature": "chg_mean6",
+        "gain_share": 0.0382
+      },
+      {
+        "feature": "chg_mean12",
+        "gain_share": 0.0381
+      },
+      {
+        "feature": "chg_mean3",
+        "gain_share": 0.0376
+      },
+      {
+        "feature": "chg_lag6",
+        "gain_share": 0.0357
+      },
+      {
+        "feature": "level_rel_12m",
+        "gain_share": 0.035
+      },
+      {
+        "feature": "month",
+        "gain_share": 0.0251
+      },
+      {
+        "feature": "series",
+        "gain_share": 0.0049
+      }
+    ],
+    "3": [
+      {
+        "feature": "chg_lag1",
+        "gain_share": 0.0879
+      },
+      {
+        "feature": "chg_mean12",
+        "gain_share": 0.0682
+      },
+      {
+        "feature": "chg_std12",
+        "gain_share": 0.0636
+      },
+      {
+        "feature": "chg_lag8",
+        "gain_share": 0.0604
+      },
+      {
+        "feature": "chg_lag12",
+        "gain_share": 0.0589
+      },
+      {
+        "feature": "chg_std6",
+        "gain_share": 0.0563
+      },
+      {
+        "feature": "chg_lag7",
+        "gain_share": 0.0551
+      },
+      {
+        "feature": "chg_mean3",
+        "gain_share": 0.052
+      },
+      {
+        "feature": "chg_lag10",
+        "gain_share": 0.0498
+      },
+      {
+        "feature": "chg_std3",
+        "gain_share": 0.0488
+      },
+      {
+        "feature": "chg_lag3",
+        "gain_share": 0.044
+      },
+      {
+        "feature": "chg_lag9",
+        "gain_share": 0.0439
+      },
+      {
+        "feature": "chg_mean6",
+        "gain_share": 0.0425
+      },
+      {
+        "feature": "chg_lag6",
+        "gain_share": 0.04
+      },
+      {
+        "feature": "chg_lag5",
+        "gain_share": 0.0391
+      },
+      {
+        "feature": "level_rel_12m",
+        "gain_share": 0.0373
+      },
+      {
+        "feature": "chg_lag11",
+        "gain_share": 0.0373
+      },
+      {
+        "feature": "chg_lag4",
+        "gain_share": 0.0351
+      },
+      {
+        "feature": "chg_lag2",
+        "gain_share": 0.0338
+      },
+      {
+        "feature": "month",
+        "gain_share": 0.033
+      },
+      {
+        "feature": "series",
+        "gain_share": 0.0129
+      }
+    ]
+  },
+  "runtime_seconds": 89.77,
+  "fits": 256
+}
