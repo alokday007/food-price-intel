@@ -62,6 +62,7 @@ Evaluated through **2026-09** on the same walk-forward folds as the scoreboard (
 | SARIMA(1,1,1)(1,1,1,12) | seasonal ARIMA, same order on every series | yes |
 | LightGBM per-series | gradient-boosted trees, one model per series | no |
 | LightGBM pooled | one model across all 6 series, series as a feature | no |
+| LightGBM pooled, log-change target (9a.1) | as LightGBM pooled, but predicts the log change (scale-free across series) | no |
 
 | model | beats | ties | loses | best model in |
 |---|---|---|---|---|
@@ -69,31 +70,33 @@ Evaluated through **2026-09** on the same walk-forward folds as the scoreboard (
 | SARIMA(1,1,1)(1,1,1,12) | 6 | 2 | 4 | 7 of 12 rows |
 | LightGBM per-series | 4 | 1 | 7 | 0 of 12 rows |
 | LightGBM pooled | 4 | 2 | 6 | 0 of 12 rows |
+| LightGBM pooled, log-change target (9a.1) | 4 | 2 | 6 | 0 of 12 rows |
 
 *Beats / ties / loses* are vs the no-change baseline, with the scoreboard's tie rule. MAE per row (lowest in **bold**; Δ is the best model vs the baseline):
 
-| series | horizon | no-change | SARIMA | LGBM-series | LGBM-pooled | best |
-|---|---|---|---|---|---|---|
-| Food Price Index | 1 month | 1.844 | **1.704** | 1.758 | 1.724 | SARIMA (-7.6%) |
-| Food Price Index | 3 months | 4.309 | **4.285** | 4.971 | 4.547 | SARIMA (-0.6%) |
-| Cereals | 1 month | **2.750** | 2.778 | 3.073 | 3.000 | no-change |
-| Cereals | 3 months | **5.468** | 5.894 | 6.054 | 6.351 | no-change |
-| Vegetable Oils | 1 month | 5.694 | **5.566** | 6.543 | 5.671 | SARIMA (-2.3%) |
-| Vegetable Oils | 3 months | **12.057** | 12.537 | 15.710 | 13.480 | no-change |
-| Dairy | 1 month | 2.579 | **2.072** | 2.396 | 2.345 | SARIMA (-19.6%) |
-| Dairy | 3 months | 6.627 | **5.701** | 6.533 | 6.418 | SARIMA (-14.0%) |
-| Meat | 1 month | 1.534 | **1.197** | 1.405 | 1.415 | SARIMA (-21.9%) |
-| Meat | 3 months | 3.611 | **2.948** | 3.303 | 3.637 | SARIMA (-18.4%) |
-| Sugar | 1 month | **4.924** | 5.259 | 5.366 | 5.362 | no-change |
-| Sugar | 3 months | **9.527** | 10.249 | 10.632 | 11.973 | no-change |
+| series | horizon | no-change | SARIMA | LGBM-series | LGBM-pooled | LGBM-pooled-log | best |
+|---|---|---|---|---|---|---|---|
+| Food Price Index | 1 month | 1.844 | **1.704** | 1.758 | 1.724 | 1.721 | SARIMA (-7.6%) |
+| Food Price Index | 3 months | 4.309 | **4.285** | 4.971 | 4.547 | 4.396 | SARIMA (-0.6%) |
+| Cereals | 1 month | **2.750** | 2.778 | 3.073 | 3.000 | 2.844 | no-change |
+| Cereals | 3 months | **5.468** | 5.894 | 6.054 | 6.351 | 5.920 | no-change |
+| Vegetable Oils | 1 month | 5.694 | **5.566** | 6.543 | 5.671 | 5.662 | SARIMA (-2.3%) |
+| Vegetable Oils | 3 months | **12.057** | 12.537 | 15.710 | 13.480 | 13.819 | no-change |
+| Dairy | 1 month | 2.579 | **2.072** | 2.396 | 2.345 | 2.266 | SARIMA (-19.6%) |
+| Dairy | 3 months | 6.627 | **5.701** | 6.533 | 6.418 | 5.985 | SARIMA (-14.0%) |
+| Meat | 1 month | 1.534 | **1.197** | 1.405 | 1.415 | 1.395 | SARIMA (-21.9%) |
+| Meat | 3 months | 3.611 | **2.948** | 3.303 | 3.637 | 3.639 | SARIMA (-18.4%) |
+| Sugar | 1 month | **4.924** | 5.259 | 5.366 | 5.362 | 5.391 | no-change |
+| Sugar | 3 months | **9.527** | 10.249 | 10.632 | 11.973 | 10.502 | no-change |
 
 **What we learned**
 
 - LightGBM did not beat SARIMA on any row, and was never the best model on any row.
 - Pooling helped slightly: the pooled model had a lower MAE than the per-series model on more rows than the reverse.
 - The pooled model's most important feature at both horizons was last month's change (momentum) — the signal SARIMA's AR term on the monthly change already models.
+- A single [pre-registered](docs/experiments/9a1_prereg.md) variant with a scale-free target was tested and failed its decision rule; the LightGBM line of work is closed.
 
-Method: fixed hyperparameters (no tuning); the target is the change, not the level (forecast = last value + predicted change); direct multi-step (one model per horizon, refit every fold); leakage tests include cross-series poisoning of the pooled model. See [`lgbm.py`](apps/forecasting/lgbm.py), [`evaluate_lgbm.py`](apps/forecasting/management/commands/evaluate_lgbm.py) and [`test_lgbm_leakage.py`](apps/forecasting/tests/test_lgbm_leakage.py).
+Method: fixed hyperparameters (no tuning); the 9a variants predict the change, not the level (forecast = last value + predicted change), and the 9a.1 variant predicts the log change (forecast = last value × exp(predicted log change)); direct multi-step (one model per horizon, refit every fold); leakage tests include cross-series poisoning of the pooled model. See [`lgbm.py`](apps/forecasting/lgbm.py), [`evaluate_lgbm.py`](apps/forecasting/management/commands/evaluate_lgbm.py) and [`test_lgbm_leakage.py`](apps/forecasting/tests/test_lgbm_leakage.py).
 <!-- models:end -->
 
 ---

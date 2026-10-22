@@ -66,7 +66,7 @@ Then regenerate the README table from the file (never edit it by hand):
 docker compose exec -T web python manage.py render_scoreboard
 ```
 
-The README's "Models evaluated" section is intentionally **not** refreshed: it renders from the one-off `data/eval/lgbm_9a.json` (eval_end 2026-09), so the command leaves it unchanged — don't re-run `evaluate_lgbm`.
+The README's "Models evaluated" section is intentionally **not** refreshed: it renders from the one-off `data/eval/lgbm_9a.json` and `data/eval/lgbm_9a1.json` (both eval_end 2026-09), so the command leaves it unchanged — don't re-run `evaluate_lgbm` or `evaluate_lgbm_9a1`.
 
 Optional harness sanity check — reproduces the recorded Phase 3 baseline on the
 old window, and asserts it:
